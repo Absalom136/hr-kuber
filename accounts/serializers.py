@@ -8,6 +8,11 @@ class UserSignupSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['username', 'email', 'password', 'confirm_password', 'role', 'avatar']
+        extra_kwargs = {
+            'avatar': {'required': False},
+            'email': {'required': True},
+            'role': {'required': True}
+        }
 
     def validate(self, data):
         if data['password'] != data['confirm_password']:
@@ -16,5 +21,9 @@ class UserSignupSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data.pop('confirm_password')
+        avatar = validated_data.pop('avatar', None)
         user = User.objects.create_user(**validated_data)
+        if avatar:
+            user.avatar = avatar
+            user.save()
         return user

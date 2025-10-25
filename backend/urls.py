@@ -10,7 +10,7 @@ def health_check(request):
 urlpatterns = [
     path('', health_check),  # ✅ root endpoint for curl testing
     path('admin/', admin.site.urls),
-    path('api/auth/', include('accounts.urls')),
+    path('api/auth/', include('accounts.urls', namespace='accounts')),  # ✅ scoped under /api/auth/
 ]
 
 # ✅ Serve media files during development

@@ -36,6 +36,7 @@ export default function Signup() {
       formData.append('username', form.username);
       formData.append('email', form.email);
       formData.append('password', form.password);
+      formData.append('confirm_password', form.confirmPassword); // ✅ required by backend
       formData.append('role', form.role);
       if (avatar) formData.append('avatar', avatar);
 
