@@ -24,20 +24,27 @@ export default function Login() {
       const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/auth/login/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, role }),
+        body: JSON.stringify({ username: email, password, role }),
       });
 
       const data = await res.json();
+      console.log('Login response:', data);
+      console.log('res.ok:', res.ok);
 
       if (res.ok) {
+        const resolvedRole = (data.role || role || '').toLowerCase();
+        console.log('Redirecting to:', `/${resolvedRole}/dashboard`);
+
         localStorage.setItem('token', data.access || data.token || '');
         localStorage.setItem('role', data.role || role);
-        navigate(`/${(data.role || role).toLowerCase()}/dashboard`);
+
+        navigate(`/${resolvedRole}/dashboard`);
       } else {
         setError(data.detail || data.message || 'Invalid credentials.');
       }
     } catch (err) {
       setError('Unable to connect. Please check your network.');
+      console.error('Login error:', err);
     } finally {
       setLoading(false);
     }

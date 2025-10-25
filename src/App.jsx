@@ -42,7 +42,7 @@ export default function App() {
           }
         />
 
-        {/* Default Redirect */}
+        {/* Catch-all Redirect */}
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </Router>
