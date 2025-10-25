@@ -1,0 +1,38 @@
+services:
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_DB: hrms
+      POSTGRES_USER: hradmin
+      POSTGRES_PASSWORD: secret
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  web:
+    build: .
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    environment:
+      DEBUG: "1"
+      DJANGO_ALLOWED_HOSTS: localhost 127.0.0.1
+      DB_NAME: hrms
+      DB_USER: hradmin
+      DB_PASSWORD: secret
+      DB_HOST: db
+      DB_PORT: 5432
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  postgres_data:
