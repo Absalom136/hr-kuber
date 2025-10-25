@@ -94,7 +94,7 @@ export default function Signup() {
         backgroundBlendMode: 'overlay',
       }}
     >
-      <DarkModeToggle />
+      <DarkModeToggle  fixed/>
       <ToastContainer position="top-center" theme="dark" />
 
       <form

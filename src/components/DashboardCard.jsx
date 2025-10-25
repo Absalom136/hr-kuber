@@ -1,10 +1,8 @@
-// E:\Projects\Python\hr-kuber\src\components\DashboardCard.jsx
-
-import { FaUsers, FaCalendar, FaBriefcase, FaChartLine } from 'react-icons/fa';
+import { FaUsers, FaCalendarAlt, FaBriefcase, FaChartLine } from 'react-icons/fa';
 
 const iconMap = {
   users: FaUsers,
-  calendar: FaCalendar,
+  calendar: FaCalendarAlt,
   briefcase: FaBriefcase,
   'chart-line': FaChartLine,
 };
@@ -13,10 +11,12 @@ export default function DashboardCard({ title, value, icon, gradient }) {
   const Icon = iconMap[icon] || FaUsers;
 
   return (
-    <div className={`p-6 rounded-xl shadow-lg text-white animate-fade-in bg-${gradient}`}>
+    <div
+      className={`p-6 rounded-xl shadow-lg text-white dark:text-white animate-fade-in bg-gradient-to-r ${gradient}`}
+    >
       <div className="flex items-center justify-between mb-2">
-        <h3 className="text-sm font-medium tracking-tight">{title}</h3>
-        <Icon className="text-xl opacity-80" />
+        <h3 className="text-sm font-medium tracking-tight opacity-90">{title}</h3>
+        <Icon className="text-2xl text-white/90 dark:text-white" />
       </div>
       <div className="text-2xl font-bold tracking-wide">{value}</div>
     </div>
