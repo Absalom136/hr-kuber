@@ -1,6 +1,12 @@
 // E:\Projects\Python\hr-kuber\src\App.jsx
 
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+} from 'react-router-dom';
+
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import AdminDashboard from './pages/AdminDashboard';
@@ -10,7 +16,12 @@ import PrivateRoute from './components/PrivateRoute';
 
 export default function App() {
   return (
-    <Router>
+    <BrowserRouter
+      future={{
+        v7_startTransition: true,
+        v7_relativeSplatPath: true,
+      }}
+    >
       <Routes>
         {/* Public Routes */}
         <Route path="/login" element={<Login />} />
@@ -45,6 +56,6 @@ export default function App() {
         {/* Catch-all Redirect */}
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
-    </Router>
+    </BrowserRouter>
   );
 }
