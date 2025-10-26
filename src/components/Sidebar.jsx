@@ -1,5 +1,3 @@
-// src/components/Sidebar.jsx
-
 import { Link, useLocation } from 'react-router-dom';
 import {
   FaUserTie,
@@ -8,7 +6,7 @@ import {
   FaSignOutAlt,
 } from 'react-icons/fa';
 
-export default function Sidebar() {
+export default function Sidebar({ collapsed = false }) {
   const location = useLocation();
 
   const navItems = [
@@ -21,22 +19,47 @@ export default function Sidebar() {
   const isActive = (path) => location.pathname.startsWith(path);
 
   return (
-    <div className="w-64 bg-primary text-white flex flex-col p-6">
-      <h2 className="text-2xl font-bold mb-6">HR Kuber</h2>
+    <aside
+      className={`${
+        collapsed ? 'w-20' : 'w-64'
+      } bg-primary text-white flex flex-col items-center p-4 shadow-md transition-all duration-300`}
+    >
+      {/* Logo or Title */}
+      <div className="mb-8 w-full text-center">
+        {collapsed ? (
+          <span className="text-xl font-bold tracking-tight">HK</span>
+        ) : (
+          <h2 className="text-2xl font-bold tracking-tight">HR Kuber</h2>
+        )}
+      </div>
 
-      <nav className="flex flex-col gap-4">
+      {/* Navigation */}
+      <nav className="flex flex-col gap-4 w-full">
         {navItems.map(({ label, path, icon: Icon }) => (
-          <Link
-            key={label}
-            to={path}
-            className={`flex items-center gap-2 px-2 py-1 rounded ${
-              isActive(path) ? 'bg-white/10 font-semibold' : ''
-            } hover:text-accent`}
-          >
-            <Icon /> {label}
-          </Link>
+          <div key={label} className="relative group">
+            <Link
+              to={path}
+              className={`flex items-center ${
+                collapsed ? 'justify-center' : 'gap-3 px-3'
+              } py-2 rounded-md transition-colors ${
+                isActive(path)
+                  ? 'bg-white/10 font-semibold'
+                  : 'hover:bg-white/10'
+              }`}
+            >
+              <Icon className="text-lg" />
+              {!collapsed && <span className="text-sm">{label}</span>}
+            </Link>
+
+            {/* Custom Tooltip */}
+            {collapsed && (
+              <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 px-2 py-1 text-xs whitespace-nowrap bg-black text-white rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">
+                {label}
+              </div>
+            )}
+          </div>
         ))}
       </nav>
-    </div>
+    </aside>
   );
 }

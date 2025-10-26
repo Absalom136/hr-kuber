@@ -23,6 +23,7 @@ class SignupView(APIView):
                 'username': user.username,
                 'role': user.role,
                 'token': token,
+                'avatar': user.avatar.url if user.avatar else ''
             }, status=status.HTTP_201_CREATED)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -58,4 +59,5 @@ class LoginView(APIView):
             'username': user.username,
             'role': user.role,
             'token': token,
+            'avatar': user.avatar.url if user.avatar else ''
         }, status=status.HTTP_200_OK)

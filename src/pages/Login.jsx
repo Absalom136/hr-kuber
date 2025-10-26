@@ -37,6 +37,8 @@ export default function Login() {
 
         localStorage.setItem('token', data.access || data.token || '');
         localStorage.setItem('role', data.role || role);
+        localStorage.setItem('username', data.username || email);
+        localStorage.setItem('avatarUrl', data.avatar || ''); // ✅ Store avatar URL
 
         navigate(`/${resolvedRole}/dashboard`);
       } else {
@@ -61,7 +63,7 @@ export default function Login() {
         backgroundBlendMode: 'overlay',
       }}
     >
-      <DarkModeToggle fixed/>
+      <DarkModeToggle fixed />
 
       <div className="bg-white/20 dark:bg-white/10 p-8 rounded-2xl shadow-2xl w-full max-w-md backdrop-blur-lg animate-fade-in transform transition-all duration-500 hover:shadow-3xl hover:scale-[1.01]">
         {/* Role Tabs */}

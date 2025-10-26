@@ -36,7 +36,7 @@ export default function Signup() {
       formData.append('username', form.username);
       formData.append('email', form.email);
       formData.append('password', form.password);
-      formData.append('confirm_password', form.confirmPassword); // ✅ required by backend
+      formData.append('confirm_password', form.confirmPassword);
       formData.append('role', form.role);
       if (avatar) formData.append('avatar', avatar);
 
@@ -46,15 +46,24 @@ export default function Signup() {
       });
 
       const data = await res.json();
+      console.log('Signup response:', data);
 
       if (res.ok) {
-        toast.success('Signup successful!');
-        localStorage.setItem('token', data.token || '');
-        localStorage.setItem('role', data.role || form.role);
-        setTimeout(() => {
-          navigate(`/${(data.role || form.role).toLowerCase()}/dashboard`);
-        }, 1500);
-      } else {
+      toast.success('Signup successful!');
+      localStorage.setItem('token', data.token || '');
+      localStorage.setItem('role', data.role || form.role);
+      localStorage.setItem('username', data.username || form.username);
+      localStorage.setItem(
+        'avatarUrl',
+        data.avatar?.startsWith('http')
+          ? data.avatar
+          : `${import.meta.env.VITE_API_BASE_URL}${data.avatar || ''}`
+      );
+
+      setTimeout(() => {
+        navigate(`/${(data.role || form.role).toLowerCase()}/dashboard`);
+      }, 1500);
+    } else {
         toast.error(data.detail || data.message || 'Signup failed');
       }
     } catch (err) {
@@ -94,7 +103,7 @@ export default function Signup() {
         backgroundBlendMode: 'overlay',
       }}
     >
-      <DarkModeToggle  fixed/>
+      <DarkModeToggle fixed />
       <ToastContainer position="top-center" theme="dark" />
 
       <form
@@ -195,7 +204,7 @@ export default function Signup() {
           )}
         </div>
 
-                {/* Role Dropdown */}
+        {/* Role Dropdown */}
         <div className="mb-6">
           <label className="block mb-2 text-sm font-medium text-white dark:text-white">
             Select Role
@@ -206,23 +215,27 @@ export default function Signup() {
                 <Listbox.Button className="w-full px-4 py-2 rounded bg-white text-gray-800 dark:bg-gray-700 dark:text-white border border-white/30 dark:border-white/20 focus:outline-none focus:ring-2 focus:ring-purple-300 flex items-center justify-between">
                   <span className="flex items-center gap-2">
                     {roleOptions.find((r) => r.value === form.role)?.icon}
-                    {form.role}
+                    <span className="text-sm">{form.role}</span>
                   </span>
+                  <span className="text-sm opacity-70">▾</span>
                 </Listbox.Button>
-                {open && (
-                  <Listbox.Options className="absolute z-10 mt-1 w-full bg-white dark:bg-gray-800 rounded shadow-lg">
-                    {roleOptions.map((role) => (
-                      <Listbox.Option
-                        key={role.value}
-                        value={role.value}
-                        className="px-4 py-2 cursor-pointer hover:bg-purple-100 dark:hover:bg-purple-700 flex items-center gap-2 text-gray-800 dark:text-white"
-                      >
-                        {role.icon}
-                        {role.label}
-                      </Listbox.Option>
-                    ))}
-                  </Listbox.Options>
-                )}
+
+                <Listbox.Options className="mt-2 bg-white/95 text-gray-800 dark:bg-gray-700 dark:text-white rounded shadow max-h-48 overflow-auto">
+                  {roleOptions.map((option) => (
+                    <Listbox.Option
+                      key={option.value}
+                      value={option.value}
+                      className={({ active }) =>
+                        `px-4 py-2 cursor-pointer flex items-center gap-2 ${active ? 'bg-purple-100 dark:bg-purple-600/30' : ''}`
+                      }
+                    >
+                      <span className="flex items-center gap-2">
+                        {option.icon}
+                        <span>{option.label}</span>
+                      </span>
+                    </Listbox.Option>
+                  ))}
+                </Listbox.Options>
               </>
             )}
           </Listbox>
@@ -231,22 +244,19 @@ export default function Signup() {
         <button
           type="submit"
           disabled={loading}
-          className={`w-full py-2 rounded-full font-semibold transition-all ${
-            loading
-              ? 'bg-gray-400 cursor-not-allowed'
-              : 'bg-gradient-to-r from-indigo-500 to-purple-600 shadow-lg hover:scale-105'
-          }`}
+          className="w-full py-2 mb-4 rounded bg-white/20 hover:bg-white/30 text-white font-semibold"
         >
           {loading ? 'Signing up...' : 'Sign Up'}
         </button>
 
-        <div className="mt-6 text-center text-sm text-white/80 dark:text-white/70">
+        <p className="text-center text-sm text-white/80">
           Already have an account?{' '}
-          <Link to="/login" className="text-white hover:underline">
+          <Link to="/login" className="text-white underline">
             Log in
           </Link>
-        </div>
+        </p>
       </form>
     </div>
   );
 }
+                   
