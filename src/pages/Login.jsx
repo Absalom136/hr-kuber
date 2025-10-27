@@ -38,7 +38,12 @@ export default function Login() {
         localStorage.setItem('token', data.access || data.token || '');
         localStorage.setItem('role', data.role || role);
         localStorage.setItem('username', data.username || email);
-        localStorage.setItem('avatarUrl', data.avatar || ''); // ✅ Store avatar URL
+        localStorage.setItem(
+        'avatarUrl',
+        data.avatar?.startsWith('http')
+          ? data.avatar
+          : `${import.meta.env.VITE_API_BASE_URL}${data.avatar || ''}`
+      );
 
         navigate(`/${resolvedRole}/dashboard`);
       } else {
