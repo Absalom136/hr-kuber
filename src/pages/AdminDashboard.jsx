@@ -80,6 +80,7 @@ export default function AdminDashboard() {
         <Topbar
           userName={userName}
           avatarUrl={avatarUrl}
+          pageTitle="Admin Dashboard" // ✅ Added for clarity
           onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
         />
 
