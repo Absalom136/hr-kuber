@@ -1,97 +1,122 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import {
-  FaUserCircle,
-  FaInbox,
-  FaCog,
-  FaSignOutAlt,
-} from 'react-icons/fa';
+import { useEffect, useState } from 'react';
 import Sidebar from '../components/Sidebar';
-import DarkModeToggle from '../components/DarkModeToggle';
+import Topbar from '../components/Topbar';
+import DashboardCard from '../components/DashboardCard';
 
 export default function ClientDashboard() {
-  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [clientStats, setClientStats] = useState({
+    activeProjects: 0,
+    invoicesDue: '$0',
+    supportTickets: 0,
+    serviceUptime: 'Loading...',
+  });
+  const [projectStatus, setProjectStatus] = useState([]);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+
+    const fetchClientStats = async () => {
+      try {
+        const res = await fetch('/api/dashboard/client', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const contentType = res.headers.get('content-type');
+        if (res.ok && contentType?.includes('application/json')) {
+          const data = await res.json();
+          setClientStats({
+            activeProjects: data.active_projects,
+            invoicesDue: data.invoices_due,
+            supportTickets: data.support_tickets,
+            serviceUptime: data.service_uptime,
+          });
+          setProjectStatus(data.project_status || []);
+        } else {
+          console.error('Invalid client stats response:', await res.text());
+        }
+      } catch (err) {
+        console.error('Failed to fetch client stats:', err);
+      }
+    };
+
+    fetchClientStats();
+  }, []);
+
+  const userName = localStorage.getItem('username') || 'Ella Jones';
+  const avatarUrl = localStorage.getItem('avatarUrl') || '';
 
   return (
     <div className="flex min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-white transition-colors duration-300">
-      <Sidebar />
+      <Sidebar collapsed={!sidebarOpen} />
+      <div className="flex-1 flex flex-col min-w-0">
+        <Topbar
+          userName={userName}
+          avatarUrl={avatarUrl}
+          pageTitle="Client Dashboard"
+          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+        />
 
-      <main className="flex-1 p-6">
-        {/* Topbar */}
-        <header className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold">Client Dashboard</h1>
-          <div className="flex items-center gap-4 relative">
-            <DarkModeToggle />
-            <input
-              type="text"
-              placeholder="Search..."
-              className="px-3 py-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-800 dark:text-white"
+        <main className="p-6 overflow-y-auto flex-1">
+          {/* Metrics Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6 mb-10">
+            <DashboardCard
+              title="Active Projects"
+              value={clientStats.activeProjects}
+              icon="folder-open"
+              gradient="from-blue-500 to-indigo-600"
             />
-            <div className="relative">
-              <img
-                src="https://i.pravatar.cc/40?img=5"
-                alt="Client Avatar"
-                className="w-10 h-10 rounded-full border-2 border-primary cursor-pointer"
-                onClick={() => setDropdownOpen(!dropdownOpen)}
-              />
-              {dropdownOpen && (
-                <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded shadow-lg z-50">
-                  <button className="flex items-center gap-3 w-full px-4 py-2 text-sm text-gray-700 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700">
-                    <FaUserCircle className="w-4 h-4" />
-                    Account
-                  </button>
-                  <button className="flex items-center gap-3 w-full px-4 py-2 text-sm text-gray-700 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700">
-                    <FaInbox className="w-4 h-4" />
-                    Inbox
-                  </button>
-                  <button className="flex items-center gap-3 w-full px-4 py-2 text-sm text-gray-700 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700">
-                    <FaCog className="w-4 h-4" />
-                    Settings
-                  </button>
-                  <Link
-                    to="/logout"
-                    className="flex items-center gap-3 w-full px-4 py-2 text-sm text-gray-700 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700"
-                  >
-                    <FaSignOutAlt className="w-4 h-4" />
-                    Logout
-                  </Link>
+            <DashboardCard
+              title="Invoices Due"
+              value={clientStats.invoicesDue}
+              icon="file-invoice-dollar"
+              gradient="from-pink-500 to-purple-600"
+            />
+            <DashboardCard
+              title="Support Tickets"
+              value={clientStats.supportTickets}
+              icon="life-ring"
+              gradient="from-green-500 to-teal-600"
+            />
+            <DashboardCard
+              title="Service Uptime"
+              value={clientStats.serviceUptime}
+              icon="server"
+              gradient="from-yellow-500 to-orange-600"
+            />
+          </div>
+
+          {/* Project Status Table */}
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md">
+            <h2 className="text-lg font-semibold mb-4">Project Status</h2>
+            <div className="overflow-x-auto text-sm">
+              {projectStatus.length > 0 ? (
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="text-xs uppercase text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+                      <th className="px-4 py-2">Project</th>
+                      <th className="px-4 py-2">Status</th>
+                      <th className="px-4 py-2">Deadline</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {projectStatus.map((proj, idx) => (
+                      <tr key={idx} className="border-b border-gray-100 dark:border-gray-700">
+                        <td className="px-4 py-2">{proj.name}</td>
+                        <td className="px-4 py-2">{proj.status}</td>
+                        <td className="px-4 py-2">{proj.deadline}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="text-gray-400 dark:text-gray-500 py-6 text-center">
+                  No active projects found
                 </div>
               )}
             </div>
           </div>
-        </header>
-
-        {/* Dashboard Content */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-          <div className="bg-white dark:bg-gray-800 p-4 rounded shadow">Projects: 3</div>
-          <div className="bg-white dark:bg-gray-800 p-4 rounded shadow">Invoices Due: $4,200</div>
-        </div>
-
-        <div className="col-span-2">
-          <h3 className="text-lg font-bold mb-2">Project Status</h3>
-          <table className="table-auto w-full bg-white dark:bg-gray-800 shadow rounded text-sm">
-            <thead>
-              <tr className="text-left text-gray-600 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700">
-                <th className="px-4 py-2">Project</th>
-                <th className="px-4 py-2">Status</th>
-                <th className="px-4 py-2">Deadline</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr className="border-b border-gray-100 dark:border-gray-700">
-                <td className="px-4 py-2">HR Portal</td>
-                <td className="px-4 py-2">In Progress</td>
-                <td className="px-4 py-2">Nov 10</td>
-              </tr>
-              <tr>
-                <td className="px-4 py-2">Payroll API</td>
-                <td className="px-4 py-2">Completed</td>
-                <td className="px-4 py-2">Oct 15</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }
