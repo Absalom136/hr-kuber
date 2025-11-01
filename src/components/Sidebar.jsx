@@ -19,6 +19,8 @@ function getSidebarItems(role) {
     case 'Admin':
       return [
         { label: 'Dashboard', path: '/admin/dashboard', icon: FaUserTie },
+        { label: 'Employees', path: '/admin/employees', icon: FaUsers },
+        { label: 'Employees', path: '/admin/users', icon: FaUsers },//show the signed up users (Admins and Employees only) do not display Clients
         { label: 'Payroll', path: '/admin/payroll', icon: FaMoneyCheckAlt },
         { label: 'Leave', path: '/admin/leaves', icon: FaCalendarCheck },
         { label: 'Attendance', path: '/admin/attendance', icon: FaClipboardList },

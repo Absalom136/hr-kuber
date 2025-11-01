@@ -1,8 +1,20 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import PasswordInput from '../components/PasswordInput';
 import SocialLogin from '../components/SocialLogin';
 import DarkModeToggle from '../components/DarkModeToggle';
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+
+function buildUrl(path) {
+  if (!API_BASE) return path;
+  return `${API_BASE.replace(/\/$/, '')}${path}`;
+}
+
+function getCookie(name) {
+  const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+  return match ? decodeURIComponent(match[2]) : null;
+}
 
 export default function Login() {
   const [role, setRole] = useState('Admin');
@@ -11,6 +23,21 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+
+  // Ensure CSRF cookie is present at app start
+  useEffect(() => {
+    (async () => {
+      try {
+        await fetch(buildUrl('/api/auth/csrf/'), {
+          method: 'GET',
+          credentials: 'include',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        });
+      } catch (err) {
+        console.warn('CSRF endpoint fetch failed (non-fatal):', err);
+      }
+    })();
+  }, []);
 
   const handleLogin = async () => {
     setError('');
@@ -21,34 +48,69 @@ export default function Login() {
 
     setLoading(true);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/auth/login/`, {
+      const csrf = getCookie('csrftoken') || getCookie('csrfToken') || '';
+
+      const res = await fetch(buildUrl('/api/auth/login/'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include', // ensure cookies are sent/accepted
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrf,
+          'X-Requested-With': 'XMLHttpRequest',
+        },
         body: JSON.stringify({ username: email, password, role }),
       });
 
-      const data = await res.json();
-      console.log('Login response:', data);
-      console.log('res.ok:', res.ok);
+      const data = await res.json().catch(() => ({}));
+      console.log('Login response status:', res.status, 'body:', data);
 
-      if (res.ok) {
-        const resolvedRole = (data.role || role || '').toLowerCase();
-        console.log('Redirecting to:', `/${resolvedRole}/dashboard`);
-
-        localStorage.setItem('token', data.access || data.token || '');
-        localStorage.setItem('role', data.role || role);
-        localStorage.setItem('username', data.username || email);
-        localStorage.setItem(
-        'avatarUrl',
-        data.avatar?.startsWith('http')
-          ? data.avatar
-          : `${import.meta.env.VITE_API_BASE_URL}${data.avatar || ''}`
-      );
-
-        navigate(`/${resolvedRole}/dashboard`);
-      } else {
+      if (!res.ok) {
+        // show backend error message when available
         setError(data.detail || data.message || 'Invalid credentials.');
+        setLoading(false);
+        return;
       }
+
+      // Confirm session with whoami
+      let whoami = null;
+      try {
+        const who = await fetch(buildUrl('/api/auth/whoami/'), {
+          method: 'GET',
+          credentials: 'include',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        });
+        whoami = await who.json().catch(() => null);
+        console.log('whoami:', whoami);
+      } catch (err) {
+        console.warn('whoami check failed:', err);
+      }
+
+      const finalRole = (whoami?.role || data.role || role || '').toString();
+      const username = whoami?.username || data.username || email;
+
+      // Build avatar URL robustly
+      let avatarUrl = '';
+      const avatarCandidate = whoami?.avatar || data.avatar || data.avatar_url || '';
+      if (avatarCandidate) {
+        if (typeof avatarCandidate === 'string' && avatarCandidate.startsWith('http')) {
+          avatarUrl = avatarCandidate;
+        } else {
+          avatarUrl = `${API_BASE.replace(/\/$/, '')}${avatarCandidate}`;
+        }
+      }
+
+      // Persist UI-only info; do not rely on token for auth when using session cookies
+      try {
+        localStorage.setItem('token', data.access || data.token || '');
+        localStorage.setItem('role', finalRole);
+        localStorage.setItem('username', username);
+        localStorage.setItem('avatarUrl', avatarUrl || '');
+      } catch (e) {
+        console.warn('LocalStorage write failed:', e);
+      }
+
+      const resolvedRole = (finalRole || '').toLowerCase() || 'admin';
+      navigate(`/${resolvedRole}/dashboard`);
     } catch (err) {
       setError('Unable to connect. Please check your network.');
       console.error('Login error:', err);
@@ -71,7 +133,6 @@ export default function Login() {
       <DarkModeToggle fixed />
 
       <div className="bg-white/20 dark:bg-white/10 p-8 rounded-2xl shadow-2xl w-full max-w-md backdrop-blur-lg animate-fade-in transform transition-all duration-500 hover:shadow-3xl hover:scale-[1.01]">
-        {/* Role Tabs */}
         <div className="flex justify-center mb-6 space-x-4">
           {['Admin', 'Employee', 'Client'].map((r) => (
             <button
@@ -95,11 +156,8 @@ export default function Login() {
           </span>
         </h2>
 
-        {error && (
-          <div className="mb-4 text-red-300 text-sm text-center">{error}</div>
-        )}
+        {error && <div className="mb-4 text-red-300 text-sm text-center">{error}</div>}
 
-        {/* Email / Username */}
         <input
           type="text"
           value={email}
@@ -109,13 +167,8 @@ export default function Login() {
           autoComplete="username"
         />
 
-        {/* Password */}
-        <PasswordInput
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+        <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} />
 
-        {/* Remember Me + Forgot Password */}
         <div className="flex justify-between items-center mt-4 text-sm text-white/80 dark:text-white/70">
           <label className="flex items-center gap-2">
             <input type="checkbox" className="form-checkbox text-purple-500" />
@@ -126,7 +179,6 @@ export default function Login() {
           </a>
         </div>
 
-        {/* Login Button */}
         <button
           onClick={handleLogin}
           disabled={loading}
@@ -139,12 +191,10 @@ export default function Login() {
           {loading ? 'Logging in...' : 'Login'}
         </button>
 
-        {/* Social Login */}
         <div className="mt-6">
           <SocialLogin />
         </div>
 
-        {/* Sign Up Prompt */}
         <div className="mt-6 text-center text-sm text-white/80 dark:text-white/70">
           Don’t have an account?{' '}
           <Link to="/signup" className="text-white hover:underline">

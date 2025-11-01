@@ -10,6 +10,8 @@ import {
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import AdminDashboard from './pages/AdminDashboard';
+import AdminEmployees from './pages/AdminEmployees';
+import AdminUsers from './pages/AdminUsers';
 import EmployeeDashboard from './pages/EmployeeDashboard';
 import ClientDashboard from './pages/ClientDashboard';
 import PrivateRoute from './components/PrivateRoute';
@@ -36,6 +38,36 @@ export default function App() {
             </PrivateRoute>
           }
         />
+
+        <Route
+          path="/admin/employees"
+          element={
+            <PrivateRoute allowedRoles={['Admin']}>
+              <AdminEmployees />
+            </PrivateRoute>
+          }
+        />
+
+        {/* Admin Users list / detail / edit */}
+        <Route
+          path="/admin/users"
+          element={
+            <PrivateRoute allowedRoles={['Admin']}>
+              <AdminUsers />
+            </PrivateRoute>
+          }
+        />
+
+        <Route
+          path="/admin/users/edit/:id"
+          element={
+            <PrivateRoute allowedRoles={['Admin']}>
+              {/* reuse AdminUsers edit page later or create a separate EditUser page */}
+              <AdminUsers />
+            </PrivateRoute>
+          }
+        />
+
         <Route
           path="/employee/dashboard"
           element={
