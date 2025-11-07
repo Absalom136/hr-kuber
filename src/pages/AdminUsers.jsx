@@ -33,6 +33,15 @@ export default function AdminUsers() {
   const [viewUser, setViewUser] = useState(null);
   const [editUser, setEditUser] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [departments, setDepartments] = useState([]); // live departments
+  const [departmentsMap, setDepartmentsMap] = useState({
+    HR: 1,
+    Finance: 2,
+    IT: 3,
+    Environment: 4,
+    Sales: 5,
+    Operations: 6,
+  });
 
   const viewPrintRef = useRef(null);
   const didFetch = useRef(false);
@@ -44,6 +53,8 @@ export default function AdminUsers() {
     if (didFetch.current) return;
     didFetch.current = true;
     fetchUsers();
+    fetchDepartments();
+
     const onStorage = (e) => {
       if (e.key === 'sidebarOpen') setSidebarOpen(e.newValue === 'true');
     };
@@ -89,6 +100,7 @@ export default function AdminUsers() {
       });
 
       const txt = await res.text();
+
       if (res.status === 401 || res.status === 403) {
         setErrorMsg('Unauthorized. Check your session or token.');
         setUsers([]);
@@ -124,6 +136,26 @@ export default function AdminUsers() {
     }
   };
 
+  const fetchDepartments = async () => {
+    try {
+      const res = await fetch(buildUrl('/api/departments/'), {
+        credentials: 'include',
+        headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const list = Array.isArray(data) ? data : data?.results || [];
+      setDepartments(list);
+      const map = {};
+      list.forEach((d) => {
+        map[d.name] = d.id;
+      });
+      setDepartmentsMap((prev) => ({ ...prev, ...map }));
+    } catch (err) {
+      console.warn('Could not fetch departments', err);
+    }
+  };
+
   const toggleSelectAll = () => {
     if (!selectAll) {
       const ids = new Set(filtered.map((u) => u.id));
@@ -146,7 +178,7 @@ export default function AdminUsers() {
   const handleDelete = async (id) => {
     if (!confirm('Delete this user? This action cannot be undone.')) return;
     try {
-      const url = buildUrl(`/api/admin/users/${id}/`);
+      const url = buildUrl(`/api/admin/users/${id}/delete/`);
       const res = await fetch(url, {
         method: 'DELETE',
         credentials: 'include',
@@ -156,7 +188,7 @@ export default function AdminUsers() {
           'X-Requested-With': 'XMLHttpRequest',
         },
       });
-      if (res.ok) {
+      if (res.ok || res.status === 204) {
         setUsers((prev) => prev.filter((u) => u.id !== id));
         setFiltered((prev) => prev.filter((u) => u.id !== id));
         const next = new Set(selectedIds);
@@ -198,7 +230,7 @@ export default function AdminUsers() {
       } else if (res.status === 404) {
         for (const id of Array.from(selectedIds)) {
           // eslint-disable-next-line no-await-in-loop
-          await fetch(buildUrl(`/api/admin/users/${id}/`), {
+          await fetch(buildUrl(`/api/admin/users/${id}/delete/`), {
             method: 'DELETE',
             credentials: 'include',
             headers: { 'X-CSRFToken': getCsrf(), 'X-Requested-With': 'XMLHttpRequest' },
@@ -222,7 +254,6 @@ export default function AdminUsers() {
   const openView = (user) => setViewUser(user);
   const closeView = () => setViewUser(null);
 
-  // Edit handlers
   const openEdit = (user) => {
     setEditUser({
       id: user.id,
@@ -238,8 +269,13 @@ export default function AdminUsers() {
       phone: user.phone || user.phone_number || '',
       physical_address: user.physical_address || user.address || '',
       payroll_number: user.payroll_number || user.payrollNumber || '',
-      department: user.department || '',
+      department:
+        typeof user.department === 'number'
+          ? user.department
+          : user.profile?.department ?? departmentsMap[user.department] ?? '',
       updated_on: new Date().toISOString(),
+      position: user.position || user.profile?.position || '',
+      hire_date: user.hire_date || user.profile?.hire_date || '',
     });
   };
 
@@ -254,20 +290,34 @@ export default function AdminUsers() {
     setSaving(true);
     try {
       const url = buildUrl(`/api/admin/users/${editUser.id}/`);
+
+      let departmentValue = null;
+      if (editUser.department === '' || editUser.department === null || editUser.department === undefined) {
+        departmentValue = null;
+      } else {
+        departmentValue = Number(editUser.department);
+        if (Number.isNaN(departmentValue)) departmentValue = null;
+      }
+
+      const formattedDOB = editUser.dob ? new Date(editUser.dob).toISOString().slice(0, 10) : null;
+      const formattedHire = editUser.hire_date ? new Date(editUser.hire_date).toISOString().slice(0, 10) : null;
+
       const body = {
         username: editUser.username,
         first_name: editUser.first_name,
         last_name: editUser.last_name,
         email: editUser.email,
         role: editUser.role,
-        id_number: editUser.id_number,
-        date_of_birth: editUser.dob,
-        gender: editUser.gender,
-        phone: editUser.phone,
-        physical_address: editUser.physical_address,
-        payroll_number: editUser.payroll_number,
-        department: editUser.department,
-        updated_on: editUser.updated_on,
+        id_number: editUser.id_number || null,
+        date_of_birth: formattedDOB,
+        gender: editUser.gender || null,
+        phone: editUser.phone || null,
+        physical_address: editUser.physical_address || null,
+        payroll_number: editUser.payroll_number || null,
+        department: departmentValue,
+        position: editUser.position || null,
+        hire_date: formattedHire,
+        updated_on: editUser.updated_on || new Date().toISOString(),
       };
 
       const res = await fetch(url, {
@@ -302,44 +352,41 @@ export default function AdminUsers() {
 
   const handlePrint = () => {
     if (!viewPrintRef.current) return;
-    // Grab the modal content HTML and inline styles
     const content = viewPrintRef.current.innerHTML;
     const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
       .map((node) => node.outerHTML)
       .join('\n');
-
     const printWindow = window.open('', '_blank', 'width=800,height=900');
     if (!printWindow) return alert('Unable to open print window — check popup blocker');
-
     printWindow.document.open();
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>User details</title>
-          ${styles}
-          <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial; padding: 20px; color: #111827; }
-            .user-print-container { max-width: 800px; margin: 0 auto; }
-            img { max-width: 120px; border-radius: 50%; }
-            .meta { margin-top: 8px; }
-            .row { margin: 6px 0; }
-            .label { font-weight: 600; color: #374151; }
-            .value { margin-left: 6px; color: #111827; }
-          </style>
-        </head>
-        <body>
-          <div class="user-print-container">
-            ${content}
-          </div>
-        </body>
-      </html>
-    `);
+    printWindow.document.write(
+      `  
+<html>
+<head>
+<title>User details</title>
+${styles}
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial; padding: 20px; color: #111827; }
+.user-print-container { max-width: 800px; margin: 0 auto; }
+img { max-width: 120px; border-radius: 50%; }
+.meta { margin-top: 8px; }
+.row { margin: 6px 0; }
+.label { font-weight: 600; color: #374151; }
+.value { margin-left: 6px; color: #111827; }
+</style>
+</head>
+<body>
+<div class="user-print-container">
+${content}
+</div>
+</body>
+</html>
+`
+    );
     printWindow.document.close();
-    // Wait for content to render before printing
     printWindow.focus();
     setTimeout(() => {
       printWindow.print();
-      // keep the window open so user can confirm; comment out next line if you want it closed automatically
       printWindow.close();
     }, 250);
   };
@@ -347,7 +394,6 @@ export default function AdminUsers() {
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-white transition-colors duration-300">
       <Sidebar collapsed={collapsed} />
-
       <style>{`
         header.sticky {
           margin-left: ${offset} !important;
@@ -359,7 +405,6 @@ export default function AdminUsers() {
           transition: margin-left 200ms ease;
         }
       `}</style>
-
       <div className="app-main-wrapper relative min-h-screen">
         <Topbar
           userName={userName}
@@ -367,7 +412,6 @@ export default function AdminUsers() {
           pageTitle="Users"
           onToggleSidebar={() => setSidebarOpen((s) => !s)}
         />
-
         <main className="p-6 overflow-y-auto">
           <div className="max-w-6xl mx-auto">
             <header className="flex items-center justify-between mb-6">
@@ -375,7 +419,6 @@ export default function AdminUsers() {
                 <h1 className="text-2xl font-bold">Users</h1>
                 <p className="text-sm text-gray-600 dark:text-gray-300">Admins and Employees registered on the platform</p>
               </div>
-
               <div className="flex items-center gap-3">
                 <div className="relative">
                   <input
@@ -389,7 +432,6 @@ export default function AdminUsers() {
                     <FaSearch />
                   </div>
                 </div>
-
                 <button onClick={fetchUsers} className="px-3 py-2 bg-primary text-white rounded">Refresh</button>
                 <button onClick={handleBulkDelete} className="px-3 py-2 bg-red-600 text-white rounded">Delete Selected</button>
               </div>
@@ -409,20 +451,17 @@ export default function AdminUsers() {
                     <th className="px-4 py-3">Actions</th>
                   </tr>
                 </thead>
-
                 <tbody className="text-sm">
                   {loading && (
                     <tr>
                       <td colSpan={6} className="px-4 py-6 text-center text-gray-500">Loading users...</td>
                     </tr>
                   )}
-
                   {!loading && (!filtered || filtered.length === 0) && (
                     <tr>
                       <td colSpan={6} className="px-4 py-6 text-center text-gray-500">{errorMsg || 'No users found'}</td>
                     </tr>
                   )}
-
                   {!loading &&
                     filtered.map((u) => {
                       const fullName = `${u.first_name ?? u.firstName ?? ''} ${u.last_name ?? u.lastName ?? ''}`.trim() || u.username || '—';
@@ -430,7 +469,6 @@ export default function AdminUsers() {
                       const roleLabel = u.role ?? u.user_role ?? 'Employee';
                       const date = u.date_joined || u.date_joined_at || u.created_at || u.created || u.signup_date || '';
                       const formattedDate = date ? new Date(date).toLocaleString() : '';
-
                       return (
                         <tr key={u.id} className="border-t last:border-b">
                           <td className="px-4 py-3">
@@ -475,7 +513,6 @@ export default function AdminUsers() {
           </div>
         </main>
 
-        {/* View modal (wider + scrollable) */}
         {viewUser && (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
             <div className="bg-white dark:bg-gray-800 rounded-xl max-w-2xl w-full shadow-lg">
@@ -483,13 +520,10 @@ export default function AdminUsers() {
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <h3 className="text-lg font-semibold">
-                      {`${(viewUser.first_name ?? viewUser.firstName ?? '').trim()} ${(viewUser.last_name ?? viewUser.lastName ?? '').trim()}`.trim() ||
-                        viewUser.username ||
-                        'User details'}
+                      {`${(viewUser.first_name ?? viewUser.firstName ?? '').trim()} ${(viewUser.last_name ?? viewUser.lastName ?? '').trim()}`.trim() || viewUser.username || 'User details'}
                     </h3>
                     <div className="text-sm text-gray-500 dark:text-gray-400">User details</div>
                   </div>
-
                   <div className="flex items-center gap-3">
                     <button onClick={handlePrint} title="Print" className="px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded flex items-center gap-2">
                       <FaPrint /> Print
@@ -509,19 +543,17 @@ export default function AdminUsers() {
                   </div>
 
                   <div className="flex-1">
-                    <div className="font-semibold text-lg">
-                      {`${(viewUser.first_name ?? viewUser.firstName ?? '')} ${(viewUser.last_name ?? viewUser.lastName ?? '')}`.trim() || viewUser.username}
-                    </div>
+                    <div className="font-semibold text-lg">{`${(viewUser.first_name ?? viewUser.firstName ?? '')} ${(viewUser.last_name ?? viewUser.lastName ?? '')}`.trim() || viewUser.username}</div>
                     <div className="text-sm text-gray-500 mt-1">{viewUser.email}</div>
 
                     <div className="mt-4 grid grid-cols-2 gap-3 text-sm text-gray-600 dark:text-gray-300">
                       <div>Role: <span className="font-medium text-gray-800 dark:text-white">{viewUser.role ?? 'Employee'}</span></div>
                       <div>Joined: <span className="font-medium text-gray-800 dark:text-white">{viewUser.date_joined ? new Date(viewUser.date_joined).toLocaleString() : ''}</span></div>
-                      <div>ID Number: <span className="font-medium text-gray-800 dark:text-white">{viewUser.id_number || viewUser.idNumber || '—'}</span></div>
-                      <div>Phone: <span className="font-medium text-gray-800 dark:text-white">{viewUser.phone || viewUser.phone_number || '—'}</span></div>
-                      <div>Department: <span className="font-medium text-gray-800 dark:text-white">{viewUser.department || '—'}</span></div>
-                      <div>Payroll #: <span className="font-medium text-gray-800 dark:text-white">{viewUser.payroll_number || '—'}</span></div>
-                      <div className="col-span-2 mt-2">Address: <div className="font-medium text-gray-800 dark:text-white">{viewUser.physical_address || '—'}</div></div>
+                      <div>ID Number: <span className="font-medium text-gray-800 dark:text-white">{viewUser.profile?.id_number || viewUser.id_number || viewUser.idNumber || '—'}</span></div>
+                      <div>Phone: <span className="font-medium text-gray-800 dark:text-white">{viewUser.profile?.phone || viewUser.phone || viewUser.phone_number || '—'}</span></div>
+                      <div>Department: <span className="font-medium text-gray-800 dark:text-white">{viewUser.profile?.department_name || viewUser.department || '—'}</span></div>
+                      <div>Payroll #: <span className="font-medium text-gray-800 dark:text-white">{viewUser.profile?.payroll_number || viewUser.payroll_number || '—'}</span></div>
+                      <div className="col-span-2 mt-2">Address: <div className="font-medium text-gray-800 dark:text-white">{viewUser.profile?.physical_address || viewUser.physical_address || '—'}</div></div>
                     </div>
                   </div>
                 </div>
@@ -535,7 +567,6 @@ export default function AdminUsers() {
           </div>
         )}
 
-        {/* Edit modal (wider + scrollable) */}
         {editUser && (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
             <div className="bg-white dark:bg-gray-800 rounded-xl max-w-2xl w-full shadow-lg">
@@ -566,99 +597,60 @@ export default function AdminUsers() {
                     <div className="grid grid-cols-2 gap-3">
                       <label className="text-sm">
                         First name
-                        <input
-                          className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700"
-                          value={editUser.first_name}
-                          onChange={(e) => handleEditChange('first_name', e.target.value)}
-                        />
+                        <input className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700" value={editUser.first_name} onChange={(e) => handleEditChange('first_name', e.target.value)} />
                       </label>
-
                       <label className="text-sm">
                         Last name
-                        <input
-                          className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700"
-                          value={editUser.last_name}
-                          onChange={(e) => handleEditChange('last_name', e.target.value)}
-                        />
+                        <input className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700" value={editUser.last_name} onChange={(e) => handleEditChange('last_name', e.target.value)} />
                       </label>
                     </div>
 
                     <label className="text-sm">
                       Email
-                      <input
-                        type="email"
-                        className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700"
-                        value={editUser.email}
-                        onChange={(e) => handleEditChange('email', e.target.value)}
-                        required
-                      />
+                      <input type="email" className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700" value={editUser.email} onChange={(e) => handleEditChange('email', e.target.value)} required />
                     </label>
 
                     <div className="grid grid-cols-2 gap-3">
                       <label className="text-sm">
                         ID Number
-                        <input
-                          className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700"
-                          value={editUser.id_number}
-                          onChange={(e) => handleEditChange('id_number', e.target.value)}
-                        />
+                        <input className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700" value={editUser.id_number} onChange={(e) => handleEditChange('id_number', e.target.value)} />
                       </label>
-
                       <label className="text-sm">
                         Date of Birth
-                        <input
-                          type="date"
-                          className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700"
-                          value={editUser.dob || ''}
-                          onChange={(e) => handleEditChange('dob', e.target.value)}
-                        />
+                        <input type="date" className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700" value={editUser.dob || ''} onChange={(e) => handleEditChange('dob', e.target.value)} />
                       </label>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3 items-end">
                       <label className="text-sm">
                         Phone
-                        <input
-                          className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700"
-                          value={editUser.phone}
-                          onChange={(e) => handleEditChange('phone', e.target.value)}
-                        />
+                        <input className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700" value={editUser.phone} onChange={(e) => handleEditChange('phone', e.target.value)} />
                       </label>
-
                       <label className="text-sm">
                         Payroll Number
-                        <input
-                          className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700"
-                          value={editUser.payroll_number}
-                          onChange={(e) => handleEditChange('payroll_number', e.target.value)}
-                        />
+                        <input className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700" value={editUser.payroll_number} onChange={(e) => handleEditChange('payroll_number', e.target.value)} />
                       </label>
                     </div>
 
                     <label className="text-sm">
                       Physical Address
-                      <textarea
-                        rows={3}
-                        className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700"
-                        value={editUser.physical_address}
-                        onChange={(e) => handleEditChange('physical_address', e.target.value)}
-                      />
+                      <textarea rows={3} className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700" value={editUser.physical_address} onChange={(e) => handleEditChange('physical_address', e.target.value)} />
                     </label>
 
                     <label className="text-sm">
                       Department
                       <select
                         className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700"
-                        value={editUser.department}
-                        onChange={(e) => handleEditChange('department', e.target.value)}
+                        value={editUser.department ?? ''}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          handleEditChange('department', v === '' ? '' : Number(v));
+                        }}
                       >
                         <option value="">Select department</option>
-                        <option value="HR">HR</option>
-                        <option value="Finance">Finance</option>
-                        <option value="IT">IT</option>
-                        <option value="Environment">Environment</option>
-                        <option value="Sales">Sales</option>
-                        <option value="Operations">Operations</option>
+                        {departments.length > 0
+                          ? departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)
+                          : Object.keys(departmentsMap).map((name) => <option key={name} value={departmentsMap[name]}>{name}</option>)}
                       </select>
                     </label>
 
@@ -666,27 +658,20 @@ export default function AdminUsers() {
                       <div className="mb-2">Gender</div>
                       <div className="flex items-center gap-4">
                         <label className="flex items-center gap-2">
-                          <input type="radio" name="gender" value="Male" checked={editUser.gender === 'Male'} onChange={(e) => handleEditChange('gender', e.target.value)} />
-                          Male
+                          <input type="radio" name="gender" value="Male" checked={editUser.gender === 'Male'} onChange={(e) => handleEditChange('gender', e.target.value)} /> Male
                         </label>
                         <label className="flex items-center gap-2">
-                          <input type="radio" name="gender" value="Female" checked={editUser.gender === 'Female'} onChange={(e) => handleEditChange('gender', e.target.value)} />
-                          Female
+                          <input type="radio" name="gender" value="Female" checked={editUser.gender === 'Female'} onChange={(e) => handleEditChange('gender', e.target.value)} /> Female
                         </label>
                         <label className="flex items-center gap-2">
-                          <input type="radio" name="gender" value="Other" checked={editUser.gender === 'Other'} onChange={(e) => handleEditChange('gender', e.target.value)} />
-                          Other
+                          <input type="radio" name="gender" value="Other" checked={editUser.gender === 'Other'} onChange={(e) => handleEditChange('gender', e.target.value)} /> Other
                         </label>
                       </div>
                     </div>
 
                     <label className="text-sm">
                       Role
-                      <select
-                        className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700"
-                        value={editUser.role}
-                        onChange={(e) => handleEditChange('role', e.target.value)}
-                      >
+                      <select className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700" value={editUser.role} onChange={(e) => handleEditChange('role', e.target.value)}>
                         <option value="">Select role</option>
                         <option value="Admin">Admin</option>
                         <option value="Employee">Employee</option>
@@ -696,12 +681,7 @@ export default function AdminUsers() {
 
                     <label className="text-sm">
                       Updated On
-                      <input
-                        type="text"
-                        readOnly
-                        className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700 text-sm"
-                        value={editUser.updated_on ? new Date(editUser.updated_on).toLocaleString() : new Date().toLocaleString()}
-                      />
+                      <input type="text" readOnly className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700 text-sm" value={editUser.updated_on ? new Date(editUser.updated_on).toLocaleString() : new Date().toLocaleString()} />
                     </label>
                   </div>
 

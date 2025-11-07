@@ -1,12 +1,20 @@
+from django.contrib.auth import authenticate, get_user_model, login
+from django.shortcuts import get_object_or_404
+from django.db.models import Q
+from django.utils import timezone
+
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated
-from django.contrib.auth import authenticate, get_user_model, login
-from django.shortcuts import get_object_or_404
-from django.db.models import Q
-from .serializers import UserSignupSerializer
+
+from .serializers import (
+    UserSignupSerializer,
+    UserSerializer,
+    AdminUserUpdateSerializer,
+)
+from .models import EmployeeProfile
 
 User = get_user_model()
 
@@ -18,10 +26,7 @@ class SignupView(APIView):
         serializer = UserSignupSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
-
-            # Optional: generate token if using JWT or DRF token auth
-            token = ''  # Replace with actual token logic if needed
-
+            token = ""  # placeholder for token logic if you implement tokens
             return Response(
                 {
                     "message": "Signup successful",
@@ -32,19 +37,12 @@ class SignupView(APIView):
                 },
                 status=status.HTTP_201_CREATED,
             )
-
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class LoginView(APIView):
-    """
-    POST /api/auth/login/
-    Expected JSON body: { username: <username or email>, password: <password>, role: <optional> }
-    On success this view calls django.contrib.auth.login(request, user) so a sessionid cookie is set.
-    """
-
     def post(self, request):
-        identifier = request.data.get("username")  # could be username or email
+        identifier = request.data.get("username")
         password = request.data.get("password")
         role = request.data.get("role")
 
@@ -54,7 +52,6 @@ class LoginView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Try to resolve username from email
         try:
             user_obj = User.objects.get(email=identifier)
             username = user_obj.username
@@ -65,7 +62,6 @@ class LoginView(APIView):
         if user is None:
             return Response({"detail": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
 
-        # Enforce role match if provided
         user_role = getattr(user, "role", None)
         if role and user_role and str(user_role).lower() != str(role).lower():
             return Response(
@@ -73,10 +69,8 @@ class LoginView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        # IMPORTANT: create session for session-based auth
         login(request, user)
-
-        token = ""  # Replace with JWT token logic if needed
+        token = ""
         return Response(
             {
                 "message": "Login successful",
@@ -89,78 +83,106 @@ class LoginView(APIView):
         )
 
 
-# --- Admin / Users endpoints for frontend -------------------------------------------------
 class AdminUsersListView(APIView):
-    """
-    GET /api/admin/users
-    Returns list of users filtered to Admin and Employee roles (exclude Clients).
-    Requires authentication. Additional permission checks (is_staff/is_superuser)
-    are applied so only admins can list users.
-    """
-
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        # Restrict to admin callers only
-        if not getattr(request.user, "is_staff", False) and not getattr(request.user, "is_superuser", False):
+        # Only staff/superuser may access admin user listing
+        if not request.user.is_staff and not request.user.is_superuser:
             return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
 
-        # Flexible role detection: adjust this logic if you store roles differently
-        # Check both is_staff/is_superuser and membership in Employee group
         qs = User.objects.filter(
             Q(is_staff=True) | Q(is_superuser=True) | Q(groups__name__iexact="Employee")
         ).distinct().order_by("-date_joined")
 
         results = []
         for u in qs:
-            # resolve role label
-            if getattr(u, "is_superuser", False) or getattr(u, "is_staff", False):
-                role_label = "Admin"
-            elif u.groups.filter(name__iexact="Employee").exists():
-                role_label = "Employee"
-            else:
-                role_label = getattr(u, "role", "") or "Client"
-
-            # skip non-Admin/Employee just in case
+            role_label = (
+                "Admin" if u.is_superuser or u.is_staff
+                else "Employee" if u.groups.filter(name__iexact="Employee").exists()
+                else getattr(u, "role", "") or "Client"
+            )
             if role_label not in ("Admin", "Employee"):
                 continue
 
-            results.append(
-                {
-                    "id": u.id,
-                    "username": getattr(u, "username", ""),
-                    "first_name": getattr(u, "first_name", "") or getattr(u, "firstName", ""),
-                    "last_name": getattr(u, "last_name", "") or getattr(u, "lastName", ""),
-                    "email": getattr(u, "email", ""),
-                    "date_joined": u.date_joined.isoformat() if getattr(u, "date_joined", None) else "",
-                    "avatar_url": (u.avatar.url if getattr(u, "avatar", None) else getattr(u, "avatar_url", "")) or "",
-                    "role": role_label,
-                }
-            )
+            results.append(UserSerializer(u, context={"request": request}).data)
 
         return Response(results, status=status.HTTP_200_OK)
 
 
 class AdminUserDeleteView(APIView):
-    """
-    DELETE /api/admin/users/<pk>
-    Allows admins to delete a user by id.
-    """
-
     permission_classes = [IsAuthenticated]
 
     def delete(self, request, pk):
-        # Restrict to admin callers only
-        if not getattr(request.user, "is_staff", False) and not getattr(request.user, "is_superuser", False):
+        if not request.user.is_staff and not request.user.is_superuser:
             return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
 
         user = get_object_or_404(User, pk=pk)
-
-        # Prevent accidental self-delete or deleting superuser if desired
         if user.pk == request.user.pk:
             return Response({"detail": "Cannot delete yourself"}, status=status.HTTP_400_BAD_REQUEST)
-        if getattr(user, "is_superuser", False) and not getattr(request.user, "is_superuser", False):
+        if user.is_superuser and not request.user.is_superuser:
             return Response({"detail": "Cannot delete a superuser"}, status=status.HTTP_403_FORBIDDEN)
 
         user.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AdminUserUpdateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, pk):
+        if not request.user.is_staff and not request.user.is_superuser:
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        user = get_object_or_404(User, pk=pk)
+        serializer = AdminUserUpdateSerializer(user, data=request.data, partial=True, context={"request": request})
+        if not serializer.is_valid():
+            # Return full validation errors to help frontend show precise messages
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        updated_user = serializer.save()
+
+        # Ensure profile exists and include its fields in the response
+        try:
+            profile, _ = EmployeeProfile.objects.get_or_create(user=updated_user)
+            # ensure updated_on is present
+            if not getattr(profile, "updated_on", None):
+                profile.updated_on = timezone.now()
+                profile.save()
+        except Exception:
+            profile = None
+
+        out = UserSerializer(updated_user, context={"request": request}).data
+        if profile is not None:
+            out_profile = {
+                "id_number": getattr(profile, "id_number", None),
+                "date_of_birth": getattr(profile, "date_of_birth", None),
+                "gender": getattr(profile, "gender", None),
+                "phone": getattr(profile, "phone", None),
+                "physical_address": getattr(profile, "physical_address", None),
+                "payroll_number": getattr(profile, "payroll_number", None),
+                "department": profile.department.id if getattr(profile, "department", None) else None,
+                "position": getattr(profile, "position", ""),
+                "hire_date": getattr(profile, "hire_date", None),
+                "updated_on": getattr(profile, "updated_on", None),
+            }
+            out.update({"profile": out_profile})
+
+        return Response(out, status=status.HTTP_200_OK)
+
+
+class AdminUsersBulkDeleteView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if not request.user.is_staff and not request.user.is_superuser:
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        ids = request.data.get("ids", [])
+        if not isinstance(ids, list):
+            return Response({"detail": "Provide a list of user IDs"}, status=status.HTTP_400_BAD_REQUEST)
+
+        users = User.objects.filter(id__in=ids)
+        deleted_count = users.count()
+        users.delete()
+        return Response({"deleted": deleted_count}, status=status.HTTP_200_OK)
