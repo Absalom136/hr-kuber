@@ -12,7 +12,9 @@ import Signup from './pages/Signup';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminEmployees from './pages/AdminEmployees';
 import AdminUsers from './pages/AdminUsers';
+import AdminPayroll from './pages/AdminPayroll';
 import EmployeeDashboard from './pages/EmployeeDashboard';
+import EmployeeBio from './pages/EmployeeBio';
 import ClientDashboard from './pages/ClientDashboard';
 import PrivateRoute from './components/PrivateRoute';
 
@@ -69,10 +71,27 @@ export default function App() {
         />
 
         <Route
+          path="/admin/payroll"
+          element={
+            <PrivateRoute allowedRoles={['Admin']}>
+              <AdminPayroll />
+            </PrivateRoute>
+          }
+        />
+
+        <Route
           path="/employee/dashboard"
           element={
             <PrivateRoute allowedRoles={['Employee']}>
               <EmployeeDashboard />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/employee/bio"
+          element={
+            <PrivateRoute allowedRoles={['Employee']}>
+              <EmployeeBio />
             </PrivateRoute>
           }
         />

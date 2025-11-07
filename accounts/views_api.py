@@ -4,12 +4,13 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, permission_classes
 from django.db.models import Q
 
 from .models import User
-from .serializers import UserSerializer, AdminUserUpdateSerializer
+from .serializers import UserSerializer, AdminUserUpdateSerializer, EmployeeSelfProfileSerializer
 
 
 @ensure_csrf_cookie
@@ -42,6 +43,15 @@ class PermissionHelpers:
             return False
         role = getattr(user, "role", "") or ""
         return user.is_superuser or (isinstance(role, str) and role.lower() == "admin")
+
+    @staticmethod
+    def is_employee_user(user):
+        if not user or not user.is_authenticated:
+            return False
+        role = getattr(user, "role", "") or ""
+        if isinstance(role, str) and role.lower() == "employee":
+            return True
+        return PermissionHelpers.is_admin_user(user)
 
 
 class AdminUsersListView(APIView):
@@ -108,6 +118,36 @@ def AdminUsersBulkDeleteView(request):
     deleted_count = users.count()
     users.delete()
     return Response({"deleted": deleted_count}, status=status.HTTP_200_OK)
+
+
+class EmployeeSelfProfileView(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get(self, request, *args, **kwargs):
+        if not PermissionHelpers.is_employee_user(request.user):
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        data = UserSerializer(request.user, context={"request": request}).data
+        return Response(data, status=status.HTTP_200_OK)
+
+    def patch(self, request, *args, **kwargs):
+        if not PermissionHelpers.is_employee_user(request.user):
+            return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = EmployeeSelfProfileSerializer(
+            request.user,
+            data=request.data,
+            partial=True,
+            context={"request": request},
+        )
+
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        updated_user = serializer.save()
+        data = UserSerializer(updated_user, context={"request": request}).data
+        return Response(data, status=status.HTTP_200_OK)
 
 
 class EmployeeDashboardView(APIView):

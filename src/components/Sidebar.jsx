@@ -12,6 +12,7 @@ import {
   FaProjectDiagram,
   FaTicketAlt,
   FaFileAlt,
+  FaAddressCard,
 } from 'react-icons/fa';
 
 function getSidebarItems(role) {
@@ -32,6 +33,7 @@ function getSidebarItems(role) {
     case 'Employee':
       return [
         { label: 'Dashboard', path: '/employee/dashboard', icon: FaUsers },
+        { label: 'Bio', path: '/employee/bio', icon: FaAddressCard },
         { label: 'Payslip', path: '/employee/payslip', icon: FaMoneyCheckAlt },
         { label: 'My Leaves', path: '/employee/leaves', icon: FaCalendarCheck },
         { label: 'Attendance', path: '/employee/attendance', icon: FaClipboardList },

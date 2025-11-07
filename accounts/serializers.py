@@ -297,3 +297,108 @@ class AdminUserUpdateSerializer(serializers.ModelSerializer):
             profile.save()
 
         return instance
+
+
+class EmployeeSelfProfileSerializer(serializers.ModelSerializer):
+    avatar = serializers.ImageField(required=False, allow_null=True)
+    remove_avatar = serializers.BooleanField(required=False, write_only=True, default=False)
+    remove_department = serializers.BooleanField(required=False, write_only=True, default=False)
+
+    id_number = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    date_of_birth = serializers.DateField(required=False, allow_null=True)
+    gender = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    phone = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    physical_address = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    payroll_number = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    department = serializers.PrimaryKeyRelatedField(queryset=Department.objects.all(), required=False, allow_null=True)
+    position = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    hire_date = serializers.DateField(required=False, allow_null=True)
+    updated_on = serializers.DateTimeField(required=False, allow_null=True)
+
+    class Meta:
+        model = User
+        fields = [
+            'first_name',
+            'last_name',
+            'email',
+            'avatar',
+            'remove_avatar',
+            'remove_department',
+            'id_number',
+            'date_of_birth',
+            'gender',
+            'phone',
+            'physical_address',
+            'payroll_number',
+            'department',
+            'position',
+            'hire_date',
+            'updated_on',
+        ]
+        extra_kwargs = {
+            'email': {'required': False},
+            'remove_avatar': {'write_only': True},
+            'remove_department': {'write_only': True},
+        }
+
+    def _pop_profile_fields(self, validated_data):
+        profile_keys = {
+            'id_number', 'date_of_birth', 'gender', 'phone', 'physical_address',
+            'payroll_number', 'department', 'position', 'hire_date', 'updated_on'
+        }
+        profile_data = {}
+        for key in list(validated_data.keys()):
+            if key in profile_keys:
+                profile_data[key] = validated_data.pop(key)
+        return profile_data
+
+    def update(self, instance, validated_data):
+        remove_avatar = validated_data.pop('remove_avatar', False)
+        remove_department = validated_data.pop('remove_department', False)
+        avatar = validated_data.pop('avatar', None) if 'avatar' in validated_data else None
+
+        for field in ['first_name', 'last_name', 'email']:
+            if field in validated_data:
+                setattr(instance, field, validated_data[field])
+
+        if avatar is not None:
+            instance.avatar = avatar
+        elif remove_avatar:
+            if getattr(instance, 'avatar', None):
+                instance.avatar.delete(save=False)
+            instance.avatar = None
+
+        instance.save()
+
+        profile_data = self._pop_profile_fields(validated_data)
+
+        if profile_data:
+            profile, _ = EmployeeProfile.objects.get_or_create(user=instance)
+
+            if remove_department:
+                profile.department = None
+            elif 'department' in profile_data:
+                dept_val = profile_data.pop('department')
+                if not dept_val:
+                    profile.department = None
+                else:
+                    profile.department = dept_val
+
+            for date_field in ['date_of_birth', 'hire_date']:
+                if date_field in profile_data and not profile_data[date_field]:
+                    profile_data[date_field] = None
+
+            for key, val in profile_data.items():
+                setattr(profile, key, val)
+
+            if not getattr(profile, 'updated_on', None):
+                profile.updated_on = timezone.now()
+
+            try:
+                profile.full_clean()
+            except DjangoValidationError as e:
+                raise serializers.ValidationError({'profile': e.message_dict})
+
+            profile.save()
+
+        return instance
