@@ -16,6 +16,7 @@ try:
         AdminUserUpdateView,
         AdminUsersBulkDeleteView,
         EmployeeDashboardView,
+        EmployeeSelfProfileView,
     )
 except Exception:
     # Fallback to importing from accounts.views if you placed views there.
@@ -48,6 +49,9 @@ urlpatterns = [
     path("api/admin/users/<int:pk>/", AdminUserUpdateView, name="api_admin_user_update"),  # function-based
     path("api/admin/users/<int:pk>/delete/", AdminUserDeleteView.as_view(), name="api_admin_user_delete"),
     path("api/admin/users/bulk-delete/", AdminUsersBulkDeleteView, name="api_admin_users_bulk_delete"),  # function-based
+
+    # Employee self-service profile management
+    path("api/employee/profile/", EmployeeSelfProfileView.as_view(), name="api_employee_profile"),
 
     # Optional: employee dashboard placeholder
     path("api/dashboard/employee/", EmployeeDashboardView.as_view(), name="api_dashboard_employee"),
