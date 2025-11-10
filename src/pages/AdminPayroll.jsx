@@ -15,13 +15,28 @@ function getCookie(name) {
   return match ? decodeURIComponent(match[2]) : null;
 }
 
+function toNumber(value) {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === 'number') return Number.isNaN(value) ? 0 : value;
+  if (typeof value === 'string') {
+    const cleaned = value.replace(/,/g, '').trim();
+    if (cleaned === '') return 0;
+    const parsed = Number(cleaned);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+}
+
+function round2(amount) {
+  return Math.round((amount + Number.EPSILON) * 100) / 100;
+}
+
 // Kenyan Tax Calculation Functions (Effective February 2025)
 function calculatePAYE(grossSalary) {
   const personalRelief = 2400; // Monthly personal relief
   let taxableIncome = grossSalary;
   let tax = 0;
 
-  // Progressive tax brackets
   if (taxableIncome > 800000) {
     tax += (taxableIncome - 800000) * 0.35;
     taxableIncome = 800000;
@@ -42,40 +57,118 @@ function calculatePAYE(grossSalary) {
     tax += taxableIncome * 0.10;
   }
 
-  // Apply personal relief
   tax = Math.max(0, tax - personalRelief);
-  return Math.round(tax);
+  return round2(tax);
 }
 
 function calculateNSSF(grossSalary) {
-  // NSSF: 6% of pensionable earnings
-  // Lower Earnings Limit (LEL): Ksh 8,000
-  // Upper Earnings Limit (UEL): Ksh 72,000
   const LEL = 8000;
   const UEL = 72000;
   const rate = 0.06;
 
   let pensionableEarnings = grossSalary;
-  if (pensionableEarnings < LEL) {
-    return 0; // No contribution if below LEL
-  }
-  if (pensionableEarnings > UEL) {
-    pensionableEarnings = UEL; // Cap at UEL
-  }
+  if (pensionableEarnings < LEL) return 0;
+  if (pensionableEarnings > UEL) pensionableEarnings = UEL;
 
-  return Math.round(pensionableEarnings * rate);
+  return round2(pensionableEarnings * rate);
 }
 
 function calculateSHIF(grossSalary) {
-  // SHIF: 2.75% of gross salary, minimum Ksh 500
   const rate = 0.0275;
   const minimum = 500;
-  const contribution = grossSalary * rate;
-  return Math.round(Math.max(minimum, contribution));
+  const contribution = Math.max(minimum, grossSalary * rate);
+  // SHIF is remitted to the nearest 0.05 (floor)
+  const roundedToStep = Math.floor(contribution * 20) / 20;
+  return round2(roundedToStep);
+}
+
+function calculatePayroll(rawValues = {}) {
+  const basic = toNumber(rawValues.basic_salary);
+  const rental = toNumber(rawValues.rental_allowance);
+  const commuter = toNumber(rawValues.commuter_allowance);
+  const otherAllowances = toNumber(rawValues.other_allowances);
+  const allowancesTotal = rental + commuter + otherAllowances;
+  const grossSalary = round2(basic + allowancesTotal);
+
+  const pension =
+    rawValues.pension !== undefined ? toNumber(rawValues.pension) : round2(basic * 0.08);
+  const loanRecovery = toNumber(rawValues.loan_recovery);
+  const saccoContribution = toNumber(rawValues.sacco_contribution);
+  const housingLevy =
+    rawValues.housing_levy !== undefined
+      ? toNumber(rawValues.housing_levy)
+      : round2(grossSalary * 0.015);
+  const otherDeductions = toNumber(rawValues.other_deductions);
+
+  const nssf =
+    rawValues.nssf !== undefined ? toNumber(rawValues.nssf) : calculateNSSF(grossSalary);
+  const shif =
+    rawValues.shif !== undefined ? toNumber(rawValues.shif) : calculateSHIF(grossSalary);
+
+  const taxableIncome = grossSalary - nssf;
+  const tax =
+    rawValues.tax !== undefined ? round2(toNumber(rawValues.tax)) : calculatePAYE(taxableIncome);
+  const deductionsTotal = round2(
+    pension + loanRecovery + saccoContribution + housingLevy + otherDeductions + nssf + shif + tax
+  );
+  const netPay = round2(grossSalary - deductionsTotal);
+
+  return {
+    basic_salary: round2(basic),
+    rental_allowance: round2(rental),
+    commuter_allowance: round2(commuter),
+    other_allowances: round2(otherAllowances),
+    allowances_total: round2(allowancesTotal),
+    gross_salary: grossSalary,
+    pension: round2(pension),
+    loan_recovery: round2(loanRecovery),
+    sacco_contribution: round2(saccoContribution),
+    housing_levy: round2(housingLevy),
+    other_deductions: round2(otherDeductions),
+    nssf: round2(nssf),
+    shif: round2(shif),
+    tax: round2(tax),
+    deductions_total: deductionsTotal,
+    net_pay: netPay,
+  };
 }
 
 function formatCurrency(amount) {
-  return `Ksh. ${(amount || 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `Ksh. ${(amount || 0).toLocaleString('en-KE', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function formatDeduction(amount) {
+  const value = Math.abs(toNumber(amount));
+  if (!value) return '-';
+  return `-${formatCurrency(value)}`;
+}
+
+function getAllowancesTotal(record) {
+  if (!record) return 0;
+  if (record.allowances_total !== undefined) return toNumber(record.allowances_total);
+  return round2(
+    toNumber(record.rental_allowance) +
+      toNumber(record.commuter_allowance) +
+      toNumber(record.other_allowances)
+  );
+}
+
+function getDeductionsTotal(record) {
+  if (!record) return 0;
+  if (record.deductions_total !== undefined) return toNumber(record.deductions_total);
+  return round2(
+    toNumber(record.pension) +
+      toNumber(record.loan_recovery) +
+      toNumber(record.sacco_contribution) +
+      toNumber(record.housing_levy) +
+      toNumber(record.other_deductions) +
+      toNumber(record.nssf) +
+      toNumber(record.shif) +
+      toNumber(record.tax)
+  );
 }
 
 export default function AdminPayroll() {
@@ -197,38 +290,61 @@ export default function AdminPayroll() {
       }
 
       const users = Array.isArray(data) ? data : data?.results ?? [];
-      
-      // Transform users into payroll entries (mock data structure)
-      // Replace this with actual payroll API call when backend is ready
-      const payrollEntries = users.map((user) => {
-        const basicSalary = 50000; // Mock data in Ksh
-        const allowances = 10000;
-        const grossSalary = basicSalary + allowances;
-        const nssf = calculateNSSF(grossSalary);
-        const shif = calculateSHIF(grossSalary);
-        const otherDeductions = 2000; // Mock other deductions
-        const totalDeductions = nssf + shif + otherDeductions;
-        const taxableIncome = grossSalary - nssf; // NSSF is tax-exempt
-        const paye = calculatePAYE(taxableIncome);
-        const netPay = grossSalary - paye - totalDeductions;
+
+      const templates = [
+        {
+          basic_salary: 16360,
+          rental_allowance: 3750,
+          commuter_allowance: 3000,
+          other_allowances: 0,
+          pension: 2053.2,
+          loan_recovery: 1321,
+          sacco_contribution: 250,
+          housing_levy: 346.65,
+          shif: 635.5,
+          nssf: 360,
+          tax: 0,
+          other_deductions: 0,
+        },
+        {
+          basic_salary: 48500,
+          rental_allowance: 12000,
+          commuter_allowance: 4500,
+          other_allowances: 3500,
+          pension: 3800,
+          loan_recovery: 2500,
+          sacco_contribution: 1200,
+          housing_levy: 540,
+          other_deductions: 600,
+        },
+        {
+          basic_salary: 29800,
+          rental_allowance: 6500,
+          commuter_allowance: 4200,
+          other_allowances: 1200,
+          pension: 2100,
+          loan_recovery: 0,
+          sacco_contribution: 500,
+          housing_levy: 430,
+          other_deductions: 300,
+        },
+      ];
+
+      const payrollEntries = users.map((user, index) => {
+        const template = templates[index % templates.length];
+
+        const computed = calculatePayroll(template);
 
         return {
           id: user.id,
           employee: user,
-          payroll_period: new Date().toISOString().slice(0, 7), // Current month
-          basic_salary: basicSalary,
-          allowances: allowances,
-          gross_salary: grossSalary,
-          nssf: nssf,
-          shif: shif,
-          other_deductions: otherDeductions,
-          deductions: totalDeductions,
-          tax: paye,
-          net_pay: netPay,
+          payroll_period: new Date().toISOString().slice(0, 7),
           status: 'Paid',
           payment_date: new Date().toISOString().slice(0, 10),
           payment_method: 'Bank Transfer',
           notes: '',
+          ...template,
+          ...computed,
         };
       });
 
@@ -267,96 +383,65 @@ export default function AdminPayroll() {
   const closeView = () => setViewPayroll(null);
 
   const openEdit = (payroll) => {
-    const calculated = calculatePayroll(
-      payroll.basic_salary || 0,
-      payroll.allowances || 0,
-      payroll.other_deductions || 0
-    );
-    setEditPayroll({
+    const base = {
       id: payroll.id,
       employee_id: payroll.employee?.id,
-      basic_salary: payroll.basic_salary || 0,
-      allowances: payroll.allowances || 0,
-      other_deductions: payroll.other_deductions || 0,
-      gross_salary: calculated.gross_salary,
-      nssf: calculated.nssf,
-      shif: calculated.shif,
-      deductions: calculated.deductions,
-      tax: calculated.tax,
-      net_pay: calculated.net_pay,
+      basic_salary: payroll.basic_salary ?? 0,
+      rental_allowance: payroll.rental_allowance ?? 0,
+      commuter_allowance: payroll.commuter_allowance ?? 0,
+      other_allowances: payroll.other_allowances ?? 0,
+      pension: payroll.pension ?? 0,
+      loan_recovery: payroll.loan_recovery ?? 0,
+      sacco_contribution: payroll.sacco_contribution ?? 0,
+      housing_levy: payroll.housing_levy ?? 0,
+      other_deductions: payroll.other_deductions ?? 0,
       payroll_period: payroll.payroll_period || '',
       status: payroll.status || 'Pending',
       payment_date: payroll.payment_date || '',
       payment_method: payroll.payment_method || 'Bank Transfer',
       notes: payroll.notes || '',
-    });
+    };
+    const computed = calculatePayroll(base);
+    setEditPayroll({ ...base, ...computed });
   };
 
   const closeEdit = () => setEditPayroll(null);
 
   const handleEditChange = (field, value) => {
-    setEditPayroll((prev) => ({ ...prev, [field]: value }));
+    setEditPayroll((prev) => {
+      const updated = { ...prev, [field]: value };
+      const recalculated = calculatePayroll(updated);
+      return { ...updated, ...recalculated };
+    });
   };
 
-  const calculatePayroll = (basic, allowances, otherDeductions) => {
-    const grossSalary = (basic || 0) + (allowances || 0);
-    const nssf = calculateNSSF(grossSalary);
-    const shif = calculateSHIF(grossSalary);
-    const totalDeductions = nssf + shif + (otherDeductions || 0);
-    const taxableIncome = grossSalary - nssf; // NSSF is tax-exempt
-    const paye = calculatePAYE(taxableIncome);
-    const netPay = grossSalary - paye - totalDeductions;
-
-    return {
-      gross_salary: grossSalary,
-      nssf: nssf,
-      shif: shif,
-      deductions: totalDeductions,
-      tax: paye,
-      net_pay: Math.max(0, netPay),
-    };
-  };
-
-  useEffect(() => {
-    if (editPayroll) {
-      const calculated = calculatePayroll(
-        editPayroll.basic_salary,
-        editPayroll.allowances,
-        editPayroll.other_deductions
-      );
-      setEditPayroll((prev) => ({
-        ...prev,
-        gross_salary: calculated.gross_salary,
-        nssf: calculated.nssf,
-        shif: calculated.shif,
-        deductions: calculated.deductions,
-        tax: calculated.tax,
-        net_pay: calculated.net_pay,
-      }));
-    }
-  }, [editPayroll?.basic_salary, editPayroll?.allowances, editPayroll?.other_deductions]);
+  const computedEdit = editPayroll ? calculatePayroll(editPayroll) : null;
+  const viewAllowancesTotal = viewPayroll ? getAllowancesTotal(viewPayroll) : 0;
+  const viewDeductionsTotal = viewPayroll ? getDeductionsTotal(viewPayroll) : 0;
 
   const handleSaveEdit = async () => {
     if (!editPayroll) return;
     setSaving(true);
     try {
-      // Replace with actual payroll API endpoint
       const url = buildUrl(`/api/admin/payroll/${editPayroll.id}/`);
-      const calculated = calculatePayroll(
-        editPayroll.basic_salary,
-        editPayroll.allowances,
-        editPayroll.other_deductions
-      );
+      const calculated = calculatePayroll(editPayroll);
       const body = {
         employee_id: editPayroll.employee_id,
-        basic_salary: parseFloat(editPayroll.basic_salary) || 0,
-        allowances: parseFloat(editPayroll.allowances) || 0,
-        other_deductions: parseFloat(editPayroll.other_deductions) || 0,
+        basic_salary: calculated.basic_salary,
+        rental_allowance: calculated.rental_allowance,
+        commuter_allowance: calculated.commuter_allowance,
+        other_allowances: calculated.other_allowances,
+        pension: calculated.pension,
+        loan_recovery: calculated.loan_recovery,
+        sacco_contribution: calculated.sacco_contribution,
+        housing_levy: calculated.housing_levy,
+        other_deductions: calculated.other_deductions,
         gross_salary: calculated.gross_salary,
+        allowances_total: calculated.allowances_total,
         nssf: calculated.nssf,
         shif: calculated.shif,
-        deductions: calculated.deductions,
         tax: calculated.tax,
+        deductions_total: calculated.deductions_total,
         net_pay: calculated.net_pay,
         payroll_period: editPayroll.payroll_period,
         status: editPayroll.status,
@@ -378,9 +463,25 @@ export default function AdminPayroll() {
       });
 
       if (res.ok) {
-        const updated = await res.json().catch(() => null);
-        setPayrolls((prev) => prev.map((p) => (p.id === editPayroll.id ? { ...p, ...updated } : p)));
-        setFiltered((prev) => prev.map((p) => (p.id === editPayroll.id ? { ...p, ...updated } : p)));
+        const updatedFromServer = await res.json().catch(() => null);
+        const mergedUpdate = updatedFromServer || {
+          ...editPayroll,
+          ...calculated,
+          status: editPayroll.status,
+          payment_date: editPayroll.payment_date,
+          payment_method: editPayroll.payment_method,
+          notes: editPayroll.notes,
+        };
+        setPayrolls((prev) =>
+          prev.map((p) =>
+            p.id === editPayroll.id ? { ...p, ...mergedUpdate, employee: p.employee } : p
+          )
+        );
+        setFiltered((prev) =>
+          prev.map((p) =>
+            p.id === editPayroll.id ? { ...p, ...mergedUpdate, employee: p.employee } : p
+          )
+        );
         closeEdit();
         alert('Payroll updated successfully');
       } else {
@@ -606,9 +707,10 @@ ${content}
                     <th className="px-4 py-3">Employee</th>
                     <th className="px-4 py-3">Period</th>
                     <th className="px-4 py-3">Basic Salary</th>
-                    <th className="px-4 py-3">Allowances</th>
-                    <th className="px-4 py-3">Deductions</th>
-                    <th className="px-4 py-3">PAYE Tax</th>
+                    <th className="px-4 py-3">Rental Allow.</th>
+                    <th className="px-4 py-3">Commuter Allow.</th>
+                    <th className="px-4 py-3">Gross Earnings</th>
+                    <th className="px-4 py-3">Total Deductions</th>
                     <th className="px-4 py-3">Net Pay</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3">Actions</th>
@@ -631,6 +733,7 @@ ${content}
                       const fullName = `${employee.first_name ?? employee.firstName ?? ''} ${employee.last_name ?? employee.lastName ?? ''}`.trim() || employee.username || '—';
                       const avatar = employee.avatar_url || employee.avatarUrl || '/default-avatar.png';
                       const period = p.payroll_period ? new Date(p.payroll_period + '-01').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '—';
+                      const deductionsTotal = getDeductionsTotal(p);
                       const statusColors = {
                         Paid: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
                         Pending: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
@@ -658,9 +761,10 @@ ${content}
                           </td>
                           <td className="px-4 py-3">{period}</td>
                           <td className="px-4 py-3">{formatCurrency(p.basic_salary || 0)}</td>
-                          <td className="px-4 py-3">{formatCurrency(p.allowances || 0)}</td>
-                          <td className="px-4 py-3">{formatCurrency(p.deductions || 0)}</td>
-                          <td className="px-4 py-3">{formatCurrency(p.tax || 0)}</td>
+                          <td className="px-4 py-3">{formatCurrency(p.rental_allowance || 0)}</td>
+                          <td className="px-4 py-3">{formatCurrency(p.commuter_allowance || 0)}</td>
+                          <td className="px-4 py-3">{formatCurrency(p.gross_salary || 0)}</td>
+                          <td className="px-4 py-3">{formatCurrency(deductionsTotal)}</td>
                           <td className="px-4 py-3 font-semibold">{formatCurrency(p.net_pay || 0)}</td>
                           <td className="px-4 py-3">
                             <span className={`px-2 py-1 rounded text-xs ${statusColors[p.status] || statusColors.Pending}`}>{p.status || 'Pending'}</span>
@@ -707,71 +811,75 @@ ${content}
                   </div>
                 </div>
 
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="space-y-6 text-sm">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <div className="text-gray-500 dark:text-gray-400">Employee</div>
-                      <div className="font-medium">
-                        {viewPayroll.employee ? `${viewPayroll.employee.first_name || ''} ${viewPayroll.employee.last_name || ''}`.trim() || viewPayroll.employee.username : '—'}
+                      <h4 className="font-semibold text-gray-600 dark:text-gray-400 mb-2">EMPLOYEE</h4>
+                      <div className="space-y-1">
+                        <div><span className="font-medium">Name:</span> {viewPayroll.employee ? `${viewPayroll.employee.first_name || ''} ${viewPayroll.employee.last_name || ''}`.trim() || viewPayroll.employee.username : '—'}</div>
+                        <div><span className="font-medium">Payroll No:</span> {viewPayroll.employee?.payroll_number || viewPayroll.employee?.id || '—'}</div>
+                        <div><span className="font-medium">Email:</span> {viewPayroll.employee?.email || '—'}</div>
+                        <div><span className="font-medium">Department:</span> {viewPayroll.employee?.department_name || viewPayroll.employee?.profile?.department_name || '—'}</div>
+                        <div><span className="font-medium">Position:</span> {viewPayroll.employee?.position || viewPayroll.employee?.profile?.position || '—'}</div>
                       </div>
                     </div>
                     <div>
-                      <div className="text-gray-500 dark:text-gray-400">Payroll Period</div>
-                      <div className="font-medium">{viewPayroll.payroll_period ? new Date(viewPayroll.payroll_period + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—'}</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-500 dark:text-gray-400">Basic Salary</div>
-                      <div className="font-medium">{formatCurrency(viewPayroll.basic_salary || 0)}</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-500 dark:text-gray-400">Allowances</div>
-                      <div className="font-medium">{formatCurrency(viewPayroll.allowances || 0)}</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-500 dark:text-gray-400">Gross Salary</div>
-                      <div className="font-medium">{formatCurrency(viewPayroll.gross_salary || 0)}</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-500 dark:text-gray-400">NSSF</div>
-                      <div className="font-medium">{formatCurrency(viewPayroll.nssf || 0)}</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-500 dark:text-gray-400">SHIF</div>
-                      <div className="font-medium">{formatCurrency(viewPayroll.shif || 0)}</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-500 dark:text-gray-400">Other Deductions</div>
-                      <div className="font-medium">{formatCurrency(viewPayroll.other_deductions || 0)}</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-500 dark:text-gray-400">Total Deductions</div>
-                      <div className="font-medium">{formatCurrency(viewPayroll.deductions || 0)}</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-500 dark:text-gray-400">PAYE Tax</div>
-                      <div className="font-medium">{formatCurrency(viewPayroll.tax || 0)}</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-500 dark:text-gray-400">Net Pay</div>
-                      <div className="font-medium text-lg text-primary">{formatCurrency(viewPayroll.net_pay || 0)}</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-500 dark:text-gray-400">Status</div>
-                      <div className="font-medium">{viewPayroll.status || 'Pending'}</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-500 dark:text-gray-400">Payment Date</div>
-                      <div className="font-medium">{viewPayroll.payment_date ? new Date(viewPayroll.payment_date).toLocaleDateString() : '—'}</div>
-                    </div>
-                    <div>
-                      <div className="text-gray-500 dark:text-gray-400">Payment Method</div>
-                      <div className="font-medium">{viewPayroll.payment_method || '—'}</div>
+                      <h4 className="font-semibold text-gray-600 dark:text-gray-400 mb-2">PAYMENT</h4>
+                      <div className="space-y-1">
+                        <div><span className="font-medium">Period:</span> {viewPayroll.payroll_period ? new Date(viewPayroll.payroll_period + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '—'}</div>
+                        <div><span className="font-medium">Status:</span> {viewPayroll.status || 'Pending'}</div>
+                        <div><span className="font-medium">Payment Date:</span> {viewPayroll.payment_date ? new Date(viewPayroll.payment_date).toLocaleDateString('en-KE') : '—'}</div>
+                        <div><span className="font-medium">Payment Method:</span> {viewPayroll.payment_method || '—'}</div>
+                      </div>
                     </div>
                   </div>
-                  {viewPayroll.notes && (
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
                     <div>
-                      <div className="text-gray-500 dark:text-gray-400 text-sm mb-1">Notes</div>
-                      <div className="text-sm">{viewPayroll.notes}</div>
+                      <h4 className="font-semibold text-gray-600 dark:text-gray-400 mb-3 border-b pb-2 uppercase tracking-wide">Earnings</h4>
+                      <div className="space-y-2">
+                        <div className="flex justify-between"><span>Basic Salary</span><span className="font-medium">{formatCurrency(viewPayroll.basic_salary || 0)}</span></div>
+                        <div className="flex justify-between"><span>Rental House Allowance</span><span className="font-medium">{formatCurrency(viewPayroll.rental_allowance || 0)}</span></div>
+                        <div className="flex justify-between"><span>Commuter Allowance</span><span className="font-medium">{formatCurrency(viewPayroll.commuter_allowance || 0)}</span></div>
+                        {toNumber(viewPayroll.other_allowances) !== 0 && (
+                          <div className="flex justify-between"><span>Other Allowances</span><span className="font-medium">{formatCurrency(viewPayroll.other_allowances || 0)}</span></div>
+                        )}
+                        <div className="flex justify-between font-semibold border-t pt-2"><span>TOTAL EARNINGS</span><span>{formatCurrency(viewPayroll.gross_salary || toNumber(viewPayroll.basic_salary) + viewAllowancesTotal)}</span></div>
+                      </div>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-gray-600 dark:text-gray-400 mb-3 border-b pb-2 uppercase tracking-wide">Deductions</h4>
+                      <div className="space-y-2">
+                        <div className="flex justify-between"><span>Pension</span><span className="font-medium text-red-600">{formatDeduction(viewPayroll.pension)}</span></div>
+                        {toNumber(viewPayroll.loan_recovery) !== 0 && (
+                          <div className="flex justify-between"><span>Loan Recovery</span><span className="font-medium text-red-600">{formatDeduction(viewPayroll.loan_recovery)}</span></div>
+                        )}
+                        {toNumber(viewPayroll.sacco_contribution) !== 0 && (
+                          <div className="flex justify-between"><span>Sacco Contribution</span><span className="font-medium text-red-600">{formatDeduction(viewPayroll.sacco_contribution)}</span></div>
+                        )}
+                        <div className="flex justify-between"><span>NSSF</span><span className="font-medium text-red-600">{formatDeduction(viewPayroll.nssf)}</span></div>
+                        <div className="flex justify-between"><span>PAYE Tax</span><span className="font-medium text-red-600">{formatDeduction(viewPayroll.tax)}</span></div>
+                        <div className="flex justify-between"><span>SHIF</span><span className="font-medium text-red-600">{formatDeduction(viewPayroll.shif)}</span></div>
+                        {toNumber(viewPayroll.housing_levy) !== 0 && (
+                          <div className="flex justify-between"><span>Housing Levy</span><span className="font-medium text-red-600">{formatDeduction(viewPayroll.housing_levy)}</span></div>
+                        )}
+                        {toNumber(viewPayroll.other_deductions) !== 0 && (
+                          <div className="flex justify-between"><span>Other Deductions</span><span className="font-medium text-red-600">{formatDeduction(viewPayroll.other_deductions)}</span></div>
+                        )}
+                        <div className="flex justify-between font-semibold border-t pt-2"><span>TOTAL DEDUCTIONS</span><span className="text-red-600">{formatDeduction(viewDeductionsTotal)}</span></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-primary/10 dark:bg-primary/20 rounded-lg p-4 flex justify-between items-center text-base">
+                    <span className="font-semibold uppercase tracking-wide">NETT PAY</span>
+                    <span className="text-xl font-bold text-primary">{formatCurrency(viewPayroll.net_pay || 0)}</span>
+                  </div>
+
+                  {viewPayroll.notes && (
+                    <div className="text-sm">
+                      <div className="text-gray-500 dark:text-gray-400 mb-1 font-semibold">Notes</div>
+                      <div>{viewPayroll.notes}</div>
                     </div>
                   )}
                 </div>
@@ -802,7 +910,7 @@ ${content}
                   }}
                 >
                   <div className="grid grid-cols-1 gap-4">
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <label className="text-sm">
                         Basic Salary (Ksh)
                         <input
@@ -815,58 +923,113 @@ ${content}
                         />
                       </label>
                       <label className="text-sm">
-                        Allowances (Ksh)
+                        Rental House Allowance (Ksh)
                         <input
                           type="number"
                           step="0.01"
                           className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700"
-                          value={editPayroll.allowances}
-                          onChange={(e) => handleEditChange('allowances', e.target.value)}
+                          value={editPayroll.rental_allowance}
+                          onChange={(e) => handleEditChange('rental_allowance', e.target.value)}
                         />
                       </label>
                       <label className="text-sm">
+                        Commuter Allowance (Ksh)
+                        <input
+                          type="number"
+                          step="0.01"
+                          className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700"
+                          value={editPayroll.commuter_allowance}
+                          onChange={(e) => handleEditChange('commuter_allowance', e.target.value)}
+                        />
+                      </label>
+                      <label className="text-sm">
+                        Other Allowances (Ksh)
+                        <input
+                          type="number"
+                          step="0.01"
+                          className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700"
+                          value={editPayroll.other_allowances}
+                          onChange={(e) => handleEditChange('other_allowances', e.target.value)}
+                        />
+                      </label>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <label className="text-sm">
+                        Pension (Ksh)
+                        <input
+                          type="number"
+                          step="0.01"
+                          className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700"
+                          value={editPayroll.pension}
+                          onChange={(e) => handleEditChange('pension', e.target.value)}
+                        />
+                      </label>
+                      <label className="text-sm">
+                        Loan Recovery (Ksh)
+                        <input
+                          type="number"
+                          step="0.01"
+                          className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700"
+                          value={editPayroll.loan_recovery}
+                          onChange={(e) => handleEditChange('loan_recovery', e.target.value)}
+                        />
+                      </label>
+                      <label className="text-sm">
+                        Sacco Contribution (Ksh)
+                        <input
+                          type="number"
+                          step="0.01"
+                          className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700"
+                          value={editPayroll.sacco_contribution}
+                          onChange={(e) => handleEditChange('sacco_contribution', e.target.value)}
+                        />
+                      </label>
+                      <label className="text-sm">
+                        Housing Levy (Ksh)
+                        <input
+                          type="number"
+                          step="0.01"
+                          className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700"
+                          value={editPayroll.housing_levy}
+                          onChange={(e) => handleEditChange('housing_levy', e.target.value)}
+                        />
+                        <div className="text-xs text-gray-500 mt-1">Defaults to 1.5% of gross pay</div>
+                      </label>
+                      <label className="text-sm md:col-span-2">
                         Other Deductions (Ksh)
                         <input
                           type="number"
                           step="0.01"
                           className="w-full mt-1 p-2 border rounded bg-white dark:bg-gray-700"
-                          value={editPayroll.other_deductions || 0}
+                          value={editPayroll.other_deductions}
                           onChange={(e) => handleEditChange('other_deductions', e.target.value)}
                         />
-                        <div className="text-xs text-gray-500 mt-1">NSSF, SHIF, and PAYE are calculated automatically</div>
+                        <div className="text-xs text-gray-500 mt-1">NSSF, SHIF, and PAYE calculate automatically</div>
                       </label>
                     </div>
 
-                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded space-y-2">
-                      <div className="grid grid-cols-2 gap-2 text-sm">
-                        <div>
-                          <div className="text-gray-600 dark:text-gray-400">Gross Salary</div>
-                          <div className="font-semibold">{formatCurrency(editPayroll.gross_salary || 0)}</div>
+                    <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded space-y-2 text-sm">
+                      <h4 className="font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wide">Summary</h4>
+                      {computedEdit ? (
+                        <div className="grid grid-cols-2 gap-2">
+                          <div><span className="text-gray-600 dark:text-gray-400">Gross Salary</span><div className="font-semibold">{formatCurrency(computedEdit.gross_salary)}</div></div>
+                          <div><span className="text-gray-600 dark:text-gray-400">Allowances Total</span><div className="font-semibold">{formatCurrency(computedEdit.allowances_total)}</div></div>
+                          <div><span className="text-gray-600 dark:text-gray-400">NSSF</span><div className="font-semibold">{formatCurrency(computedEdit.nssf)}</div></div>
+                          <div><span className="text-gray-600 dark:text-gray-400">SHIF</span><div className="font-semibold">{formatCurrency(computedEdit.shif)}</div></div>
+                          <div><span className="text-gray-600 dark:text-gray-400">PAYE Tax</span><div className="font-semibold">{formatCurrency(computedEdit.tax)}</div></div>
+                          <div><span className="text-gray-600 dark:text-gray-400">Total Deductions</span><div className="font-semibold text-red-600">{formatDeduction(computedEdit.deductions_total)}</div></div>
+                          <div className="col-span-2">
+                            <span className="text-gray-600 dark:text-gray-400">Net Pay</span>
+                            <div className="text-xl font-semibold text-primary">{formatCurrency(computedEdit.net_pay)}</div>
+                          </div>
                         </div>
-                        <div>
-                          <div className="text-gray-600 dark:text-gray-400">NSSF</div>
-                          <div className="font-semibold">{formatCurrency(editPayroll.nssf || 0)}</div>
-                        </div>
-                        <div>
-                          <div className="text-gray-600 dark:text-gray-400">SHIF</div>
-                          <div className="font-semibold">{formatCurrency(editPayroll.shif || 0)}</div>
-                        </div>
-                        <div>
-                          <div className="text-gray-600 dark:text-gray-400">Total Deductions</div>
-                          <div className="font-semibold">{formatCurrency(editPayroll.deductions || 0)}</div>
-                        </div>
-                        <div>
-                          <div className="text-gray-600 dark:text-gray-400">PAYE Tax</div>
-                          <div className="font-semibold">{formatCurrency(editPayroll.tax || 0)}</div>
-                        </div>
-                        <div>
-                          <div className="text-gray-600 dark:text-gray-400">Net Pay</div>
-                          <div className="text-xl font-semibold text-primary">{formatCurrency(editPayroll.net_pay || 0)}</div>
-                        </div>
-                      </div>
+                      ) : (
+                        <div className="text-gray-500">Enter salary details to see summary.</div>
+                      )}
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <label className="text-sm">
                         Payroll Period
                         <input

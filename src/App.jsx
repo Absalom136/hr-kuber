@@ -15,6 +15,7 @@ import AdminUsers from './pages/AdminUsers';
 import AdminPayroll from './pages/AdminPayroll';
 import EmployeeDashboard from './pages/EmployeeDashboard';
 import EmployeeBio from './pages/EmployeeBio';
+import EmployeePayslip from './pages/EmployeePayslip';
 import ClientDashboard from './pages/ClientDashboard';
 import PrivateRoute from './components/PrivateRoute';
 
@@ -92,6 +93,14 @@ export default function App() {
           element={
             <PrivateRoute allowedRoles={['Employee']}>
               <EmployeeBio />
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path="/employee/payslip"
+          element={
+            <PrivateRoute allowedRoles={['Employee']}>
+              <EmployeePayslip />
             </PrivateRoute>
           }
         />
